@@ -1,0 +1,15 @@
+version: "1.0"
+project:
+  name: "example-project"
+  version: "0.1.0"
+  description: "Starter template for Code Compass knowledge repository"
+generated_at: "2026-01-01T00:00:00Z"
+generator: "code-compass 0.1.0"
+statistics:
+  total_files: 0
+  total_lines: 0
+  total_size_bytes: 0
+  graph_nodes: 0
+  graph_edges: 0
+languages:
+  - python

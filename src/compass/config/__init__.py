@@ -1,0 +1,21 @@
+"""Configuration module for Code Compass."""
+
+from compass.config.settings import (
+    AnalysisConfig,
+    CompassConfig,
+    KnowledgeConfig,
+    LLMConfig,
+    ProjectConfig,
+    SourceConfig,
+    load_config,
+)
+
+__all__ = [
+    "AnalysisConfig",
+    "CompassConfig",
+    "KnowledgeConfig",
+    "LLMConfig",
+    "ProjectConfig",
+    "SourceConfig",
+    "load_config",
+]

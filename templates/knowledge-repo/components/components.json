@@ -1,0 +1,15 @@
+[
+  {
+    "id": "module:example",
+    "type": "module",
+    "name": "example",
+    "is_deterministic": true,
+    "source": {
+      "file": "example.py",
+      "line_start": 1,
+      "line_end": 10,
+      "method": "ast"
+    },
+    "docstring": "Example module docstring"
+  }
+]

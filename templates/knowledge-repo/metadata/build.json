@@ -1,0 +1,15 @@
+{
+  "build_timestamp": "2026-01-01T00:00:00Z",
+  "source_path": ".",
+  "files_count": 0,
+  "lines_of_code": 0,
+  "size_bytes": 0,
+  "git": {
+    "is_repo": false,
+    "branch": null,
+    "head_commit": null,
+    "commits_analyzed": 0
+  },
+  "nodes_count": 0,
+  "edges_count": 0
+}

@@ -1,0 +1,38 @@
+# Code Compass Configuration Example
+# Local-First Agent Knowledge Framework
+
+project:
+  name: example-app
+  description: "An example Python backend application"
+  version: 0.1.0
+
+source:
+  path: ./src
+  ignore_patterns:
+    - ".git"
+    - "node_modules"
+    - ".venv"
+    - "venv"
+    - "__pycache__"
+    - "dist"
+    - "build"
+    - "coverage"
+    - ".env"
+    - ".pytest_cache"
+
+knowledge:
+  path: ./knowledge
+
+analysis:
+  languages:
+    - python
+  files: true
+  imports: true
+  symbols: true
+  git_history: true
+  max_git_commits: 100
+
+llm:
+  # Default 'none' performs zero network calls and runs 100% offline.
+  provider: none
+  model: null
