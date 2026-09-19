@@ -106,7 +106,9 @@ class FileScanner:
         for root, dirs, files in os.walk(self.root_path):
             current_dir = Path(root)
 
-            # Filter ignored subdirectories in-place to avoid descending into them
+            # Filter and count ignored subdirectories to avoid descending into them
+            ignored_dirs = [d for d in dirs if self.is_ignored(current_dir / d)]
+            result.ignored_count += len(ignored_dirs)
             dirs[:] = [d for d in dirs if not self.is_ignored(current_dir / d)]
 
             for file_name in files:

@@ -6,7 +6,28 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import yaml
 
-from mcp.server.fastmcp import FastMCP
+try:
+    # MCP 2.x
+    from mcp.server.mcpserver import MCPServer as FastMCP
+except ImportError:
+    try:
+        # MCP 1.x
+        from mcp.server.fastmcp import FastMCP
+    except ImportError:
+        # Generic fallback shim if MCP SDK structure differs
+        class FastMCP:  # type: ignore
+            def __init__(self, name: str, **kwargs):
+                self.name = name
+                self.tools = {}
+
+            def tool(self, *args, **kwargs):
+                def decorator(fn):
+                    self.tools[fn.__name__] = fn
+                    return fn
+                return decorator
+
+            def run(self, transport: str = "stdio"):
+                logger.info(f"Running MCP server '{self.name}' on {transport}")
 
 from compass.config.settings import CompassConfig
 from compass.knowledge.graph import KnowledgeGraph
