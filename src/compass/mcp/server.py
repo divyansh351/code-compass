@@ -79,11 +79,11 @@ class KnowledgeService:
         return "Architecture overview not found. Run 'compass build' to generate knowledge."
 
     def search_knowledge(self, query: str) -> List[Dict[str, Any]]:
-        """Search components, modules, and symbols matching query string."""
+        """Search components, modules, symbols, and human-curated documentation matching query string."""
         q_lower = query.lower()
         results: List[Dict[str, Any]] = []
 
-        # 1. Search components
+        # 1. Search components (AST-extracted)
         components = self._get_components()
         for comp in components:
             name = comp.get("name", "")
@@ -102,7 +102,27 @@ class KnowledgeService:
                     "docstring": (doc[:150] + "...") if len(doc) > 150 else doc,
                 })
 
-        return results[:25]
+        # 2. Search human-curated folders (conventions, workflows, decisions, architecture)
+        doc_dirs = ["conventions", "workflows", "decisions", "architecture"]
+        for dir_name in doc_dirs:
+            target_dir = self.knowledge_path / dir_name
+            if target_dir.exists() and target_dir.is_dir():
+                for md_file in target_dir.glob("*.md"):
+                    try:
+                        content = md_file.read_text(encoding="utf-8")
+                        if q_lower in md_file.name.lower() or q_lower in content.lower():
+                            snippet = content[:200].replace("\n", " ")
+                            results.append({
+                                "id": f"doc:{dir_name}/{md_file.name}",
+                                "name": md_file.stem.replace("-", " ").title(),
+                                "type": f"documentation ({dir_name})",
+                                "source": {"file": f"{dir_name}/{md_file.name}", "method": "manual"},
+                                "docstring": snippet + ("..." if len(content) > 200 else ""),
+                            })
+                    except Exception:
+                        pass
+
+        return results[:30]
 
     def get_component(self, name: str) -> Dict[str, Any]:
         """Get detailed information about a component by name or ID."""
@@ -172,6 +192,56 @@ class KnowledgeService:
         return graph.get_change_surface(component)
 
 
+    def update_knowledge(
+        self,
+        category: str,
+        title: str,
+        content: str,
+        tags: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Record or update findings, conventions, workflows, or architecture decisions."""
+        import datetime
+        import re
+
+        allowed_categories = ["conventions", "workflows", "decisions", "architecture", "notes"]
+        cat = category.lower().strip()
+        if cat not in allowed_categories:
+            return {
+                "success": False,
+                "error": f"Invalid category '{category}'. Allowed: {', '.join(allowed_categories)}",
+            }
+
+        target_dir = self.knowledge_path / cat
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        # Generate a clean filename slug
+        clean_slug = re.sub(r"[^\w\-_]", "-", title.lower().strip()).strip("-")
+        filename = clean_slug if clean_slug.endswith(".md") else f"{clean_slug}.md"
+        if not filename or filename == ".md":
+            filename = "note.md"
+
+        file_path = target_dir / filename
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        tag_str = f"> **Tags**: {', '.join(tags)}\n" if tags else ""
+
+        doc_content = f"""# {title}
+
+> **Category**: `{cat}` | **Updated**: `{now_iso}` | **Origin**: `agent-curated`
+{tag_str}
+{content.strip()}
+"""
+        file_path.write_text(doc_content, encoding="utf-8")
+        logger.info(f"Updated knowledge document: {file_path}")
+
+        return {
+            "success": True,
+            "category": cat,
+            "title": title,
+            "file": f"{cat}/{filename}",
+            "message": f"Successfully recorded '{title}' in knowledge/{cat}/{filename}",
+        }
+
+
 def create_mcp_server(knowledge_path: Path | str) -> FastMCP:
     """Instantiate and configure FastMCP server with Code Compass knowledge tools."""
     service = KnowledgeService(knowledge_path)
@@ -211,6 +281,12 @@ def create_mcp_server(knowledge_path: Path | str) -> FastMCP:
         """Return the blast radius and directly related components from the graph for a component."""
         surface = service.get_change_surface(component)
         return json.dumps(surface, indent=2)
+
+    @mcp.tool()
+    def update_knowledge(category: str, title: str, content: str) -> str:
+        """Save or update a project convention, workflow, architecture decision, or finding into the knowledge repository."""
+        res = service.update_knowledge(category=category, title=title, content=content)
+        return json.dumps(res, indent=2)
 
     return mcp
 

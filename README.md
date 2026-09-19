@@ -444,7 +444,8 @@ Add to `cline_mcp_settings.json`:
         "get_component",
         "get_dependencies",
         "get_file_context",
-        "get_change_surface"
+        "get_change_surface",
+        "update_knowledge"
       ]
     }
   }
@@ -472,16 +473,17 @@ Set the executable command to `compass` with arguments `["serve", "--config", "c
 
 ## 🛠 MCP Tools Reference & Examples
 
-When connected via MCP, the AI agent has access to 6 specialized tools:
+When connected via MCP, the AI agent has access to 7 specialized tools:
 
 | Tool | Parameters | Description |
 | :--- | :--- | :--- |
 | `get_project_overview` | *None* | Returns the high-level architecture overview markdown. |
-| `search_knowledge` | `query: str` | Searches symbols, classes, functions, and docstrings. |
+| `search_knowledge` | `query: str` | Searches symbols, classes, functions, docstrings, and curated markdown documents. |
 | `get_component` | `name: str` | Retrieves full signature, docstring, source provenance, and metadata for a component. |
 | `get_dependencies` | `name: str` | Returns upstream dependencies and downstream dependents for a component. |
 | `get_file_context` | `path: str` | Returns all symbols, containment relationships, and metadata for a source file. |
 | `get_change_surface` | `component: str` | Calculates the blast radius / impacted nodes in the knowledge graph. |
+| `update_knowledge` | `category: str`, `title: str`, `content: str` | Allows the AI agent to save new rules, conventions, workflows, ADRs, or findings directly into the knowledge repository. |
 
 ### Example Agent Interactions
 
@@ -492,6 +494,10 @@ When connected via MCP, the AI agent has access to 6 specialized tools:
 #### 2. Planning Refactors & Blast Radius
 > **User Prompt**: "I want to modify the `UserRepository` interface. What other components will be impacted?"  
 > **Agent Action**: Calls `get_change_surface("UserRepository")` to receive the exact list of dependent services.
+
+#### 3. Updating Knowledge When Finding a Gap or Rule
+> **User Prompt**: "You shouldn't query the SQL session inside route handlers; always use the Service layer. Record this in Code Compass so we don't repeat this."  
+> **Agent Action**: Calls `update_knowledge(category="conventions", title="router-database-boundary", content="Never query DB sessions directly inside route handlers. Route handlers must only call Service classes.")`.
 
 ---
 

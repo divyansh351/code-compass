@@ -66,6 +66,20 @@ def test_mcp_knowledge_service_tools(setup_knowledge_fixture: Path):
     assert surface["found"] is True
     assert "dependents" in surface
 
+    # 7. update_knowledge
+    update_res = service.update_knowledge(
+        category="conventions",
+        title="error-handling-rules",
+        content="Always use custom DomainException instead of raw Exception.",
+    )
+    assert update_res["success"] is True
+    assert "error-handling-rules.md" in update_res["file"]
+
+    # Verify search finds the newly recorded knowledge
+    search_res = service.search_knowledge("DomainException")
+    assert len(search_res) >= 1
+    assert any("Error Handling Rules" in r["name"] for r in search_res)
+
 
 def test_fastmcp_server_instance_creation(setup_knowledge_fixture: Path):
     mcp = create_mcp_server(setup_knowledge_fixture)
