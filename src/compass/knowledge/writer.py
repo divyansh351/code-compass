@@ -30,6 +30,7 @@ class KnowledgeWriter:
             "conventions",
             "workflows",
             "decisions",
+            "files",
             "graph",
             "metadata",
         ]:
@@ -44,10 +45,13 @@ class KnowledgeWriter:
         # 4. Write components/components.json
         self._write_components(graph)
 
-        # 5. Write graph/graph.json
+        # 5. Write mirrored per-file knowledge in files/
+        self._write_files_knowledge(graph, repo_data)
+
+        # 6. Write graph/graph.json
         self._write_graph(graph)
 
-        # 6. Write metadata/build.json
+        # 7. Write metadata/build.json
         self._write_metadata(graph, repo_data)
 
         return self.output_dir
@@ -77,8 +81,38 @@ class KnowledgeWriter:
     def _write_architecture_overview(
         self, graph: KnowledgeGraph, repo_data: RepositoryData
     ) -> None:
+        overview_file = self.output_dir / "architecture" / "overview.md"
+        custom_ai_overview = ""
+        if overview_file.exists():
+            try:
+                old_text = overview_file.read_text(encoding="utf-8")
+                if "## Executive Overview" in old_text and "## Repository" in old_text:
+                    custom_ai_overview = old_text.split("## Executive Overview", 1)[1].split("## Repository", 1)[0].strip()
+            except Exception:
+                custom_ai_overview = ""
+
+        # Default overview if not yet supplied by active agent
+        if not custom_ai_overview:
+            modules = graph.find_nodes_by_type(KnowledgeNodeType.MODULE)
+            classes = graph.find_nodes_by_type(KnowledgeNodeType.CLASS)
+            ext_deps = graph.find_nodes_by_type(KnowledgeNodeType.EXTERNAL_DEPENDENCY)
+            
+            deterministic_summary = (
+                f"`{self.config.project.name}` is a software project comprising "
+                f"{repo_data.scan_result.total_files} files across "
+                f"{', '.join(sorted(repo_data.scan_result.languages_detected)) or 'multiple languages'}. "
+                f"The codebase defines {len(modules)} internal modules and {len(classes)} classes, "
+                f"relying on {len(ext_deps)} external dependencies ({', '.join(sorted([d.name for d in ext_deps])[:5]) or 'standard library'})."
+            )
+            if self.config.project.description:
+                deterministic_summary = f"{self.config.project.description.strip()} — {deterministic_summary}"
+            custom_ai_overview = deterministic_summary
+
         lines: List[str] = []
         lines.append("# Architecture Overview")
+        lines.append("")
+        lines.append("## Executive Overview")
+        lines.append(f"> {custom_ai_overview}")
         lines.append("")
         lines.append("## Repository")
         lines.append(f"`{self.config.project.name}`")
@@ -164,6 +198,88 @@ class KnowledgeWriter:
 
         with open(self.output_dir / "components" / "components.json", "w", encoding="utf-8") as f:
             json.dump(components_list, f, indent=2)
+
+    def _write_files_knowledge(self, graph: KnowledgeGraph, repo_data: RepositoryData) -> None:
+        """Write mirrored per-file Markdown documentation into knowledge/files/."""
+        files_dir = self.output_dir / "files"
+        files_dir.mkdir(parents=True, exist_ok=True)
+
+        for scanned in repo_data.files:
+            rel_norm = scanned.relative_path.replace("\\", "/")
+            target_md = files_dir / f"{rel_norm}.md"
+            target_md.parent.mkdir(parents=True, exist_ok=True)
+
+            # Preserve existing custom notes if file exists
+            custom_notes = ""
+            if target_md.exists():
+                try:
+                    old_text = target_md.read_text(encoding="utf-8")
+                    if "## Curated Notes & Agent Learnings" in old_text:
+                        custom_notes = old_text.split("## Curated Notes & Agent Learnings", 1)[1]
+                except Exception:
+                    custom_notes = ""
+
+            # Collect symbols associated with this file
+            file_symbols = [
+                n for n in graph._nodes_by_id.values()
+                if n.source and n.source.file and n.source.file == rel_norm
+            ]
+
+            lines = [
+                f"# File: `{rel_norm}`",
+                "",
+                "## Overview",
+                f"- **Language**: {scanned.language.capitalize() if scanned.language else 'Unknown'}",
+                f"- **Lines**: {scanned.line_count}",
+                f"- **Size**: {scanned.size_bytes} bytes",
+                "",
+            ]
+
+            # Classes
+            classes = [s for s in file_symbols if s.type == KnowledgeNodeType.CLASS]
+            if classes:
+                lines.append("## Classes")
+                for cls in classes:
+                    lines.append(f"### `class {cls.name}`")
+                    if cls.docstring:
+                        lines.append(f"> {cls.docstring.strip()}")
+                    if hasattr(cls, "bases") and cls.bases:
+                        lines.append(f"- **Inherits from**: {', '.join(cls.bases)}")
+                    lines.append("")
+
+            # Functions & Methods
+            functions = [s for s in file_symbols if s.type in (KnowledgeNodeType.FUNCTION, KnowledgeNodeType.METHOD)]
+            if functions:
+                lines.append("## Functions & Methods")
+                for fn in functions:
+                    sig = getattr(fn, "signature", None) or f"def {fn.name}()"
+                    lines.append(f"### `{sig}`")
+                    if fn.docstring:
+                        lines.append(f"> {fn.docstring.strip()}")
+                    lines.append("")
+
+            # Dependencies & Dependents
+            deps = graph.get_dependencies(f"file:{rel_norm}")
+            if not deps:
+                # check module node
+                mod_id = f"module:{rel_norm.removesuffix('.py').replace('/', '.')}"
+                deps = graph.get_dependencies(mod_id)
+
+            if deps:
+                lines.append("## Dependencies")
+                for d in deps:
+                    lines.append(f"- **{d.get('relationship', 'DEPENDS_ON')}** → `{d.get('name', d.get('id'))}`")
+                lines.append("")
+
+            # Curated Notes Section
+            lines.append("## Curated Notes & Agent Learnings")
+            if custom_notes.strip():
+                lines.append(custom_notes.strip())
+            else:
+                lines.append("<!-- Add file-specific gotchas, architectural notes, or agent learnings below -->")
+            lines.append("")
+
+            target_md.write_text("\n".join(lines), encoding="utf-8")
 
     def _write_graph(self, graph: KnowledgeGraph) -> None:
         with open(self.output_dir / "graph" / "graph.json", "w", encoding="utf-8") as f:

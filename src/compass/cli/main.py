@@ -232,17 +232,41 @@ def doctor(
                 str(src_path),
             )
 
-            # LLM Provider check (Privacy)
-            is_offline = config.llm.provider == "none"
             table.add_row(
-                "LLM Privacy Mode",
-                "[green]LOCAL (NONE)[/green]" if is_offline else f"[cyan]{config.llm.provider.upper()}[/cyan]",
-                "Zero external network calls (100% offline)" if is_offline else f"Provider '{config.llm.provider}' enabled",
+                "Privacy & Architecture Mode",
+                "[green]100% LOCAL[/green]",
+                "Zero external API keys, zero network telemetry, zero cloud dependencies",
             )
         except Exception as e:
             table.add_row("Config Validation", "[red]FAIL[/red]", str(e))
 
     console.print(table)
+
+
+@app.command()
+def commit(
+    message: Optional[str] = typer.Option(None, "--message", "-m", help="Git commit message"),
+    config_file: str = typer.Option("compass.yaml", "--config", "-c", help="Path to compass.yaml"),
+):
+    """Commit changes in the local knowledge repository using Git on demand."""
+    try:
+        config = load_config(config_file)
+    except Exception as e:
+        console.print(f"[bold red]Error loading configuration:[/bold red] {e}")
+        raise typer.Exit(code=1)
+
+    from compass.mcp.server import KnowledgeService
+    service = KnowledgeService(config.knowledge.path)
+    res = service.commit_knowledge(message=message)
+
+    if res.get("success"):
+        if res.get("committed"):
+            console.print(f"[bold green]✓[/bold green] {res.get('message')}")
+        else:
+            console.print(f"[bold yellow]•[/bold yellow] {res.get('message')}")
+    else:
+        console.print(f"[bold red]✗ Commit error:[/bold red] {res.get('error')}")
+        raise typer.Exit(code=1)
 
 
 if __name__ == "__main__":

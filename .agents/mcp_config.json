@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "code-compass": {
+      "command": "C:/Users/Divyansh Gupta/Desktop/code-compass/.venv/Scripts/compass.exe",
+      "args": [
+        "serve",
+        "--config",
+        "C:/Users/Divyansh Gupta/Desktop/code-compass/compass.yaml"
+      ]
+    }
+  }
+}

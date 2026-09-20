@@ -176,10 +176,20 @@ class KnowledgeService:
         edges_out = graph.get_outgoing_edges(file_node_id)
         edges_in = graph.get_incoming_edges(file_node_id)
 
+        # Check for mirrored Markdown file in knowledge/files/
+        file_md_path = self.knowledge_path / "files" / f"{norm_path}.md"
+        markdown_summary = ""
+        if file_md_path.exists():
+            try:
+                markdown_summary = file_md_path.read_text(encoding="utf-8")
+            except Exception:
+                markdown_summary = ""
+
         return {
             "file": norm_path,
             "symbols_count": len(file_symbols),
             "symbols": file_symbols,
+            "markdown_summary": markdown_summary,
             "relationships": {
                 "outgoing": edges_out,
                 "incoming": edges_in,
@@ -199,16 +209,43 @@ class KnowledgeService:
         content: str,
         tags: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        """Record or update findings, conventions, workflows, or architecture decisions."""
+        """Record or update findings, conventions, workflows, architecture decisions, or per-file notes."""
         import datetime
         import re
 
-        allowed_categories = ["conventions", "workflows", "decisions", "architecture", "notes"]
+        allowed_categories = ["conventions", "workflows", "decisions", "architecture", "notes", "files"]
         cat = category.lower().strip()
         if cat not in allowed_categories:
             return {
                 "success": False,
                 "error": f"Invalid category '{category}'. Allowed: {', '.join(allowed_categories)}",
+            }
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        tag_str = f"> **Tags**: {', '.join(tags)}\n" if tags else ""
+
+        if cat == "files":
+            # Direct update to mirrored file in knowledge/files/<title>.md
+            target_dir = self.knowledge_path / "files"
+            target_dir.mkdir(parents=True, exist_ok=True)
+            norm_rel = title.replace("\\", "/").strip("/")
+            file_path = target_dir / (norm_rel if norm_rel.endswith(".md") else f"{norm_rel}.md")
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if file_path.exists():
+                existing = file_path.read_text(encoding="utf-8")
+                addition = f"\n\n### Update ({now_iso})\n{tag_str}{content.strip()}\n"
+                file_path.write_text(existing + addition, encoding="utf-8")
+            else:
+                doc_content = f"# File Knowledge: `{norm_rel}`\n\n> **Updated**: `{now_iso}` | **Origin**: `agent-curated`\n{tag_str}\n{content.strip()}\n"
+                file_path.write_text(doc_content, encoding="utf-8")
+
+            return {
+                "success": True,
+                "category": "files",
+                "title": title,
+                "file": f"files/{norm_rel}.md",
+                "message": f"Successfully updated file knowledge in knowledge/files/{norm_rel}.md",
             }
 
         target_dir = self.knowledge_path / cat
@@ -221,8 +258,6 @@ class KnowledgeService:
             filename = "note.md"
 
         file_path = target_dir / filename
-        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        tag_str = f"> **Tags**: {', '.join(tags)}\n" if tags else ""
 
         doc_content = f"""# {title}
 
@@ -240,6 +275,79 @@ class KnowledgeService:
             "file": f"{cat}/{filename}",
             "message": f"Successfully recorded '{title}' in knowledge/{cat}/{filename}",
         }
+
+    def update_overview(self, summary: str) -> Dict[str, Any]:
+        """Update or enrich the Executive AI Overview in architecture/overview.md."""
+        import datetime
+
+        overview_file = self.knowledge_path / "architecture" / "overview.md"
+        if not overview_file.exists():
+            return {"success": False, "error": "architecture/overview.md not found. Run compass build first."}
+
+        text = overview_file.read_text(encoding="utf-8")
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        new_header = f"## Executive Overview\n> {summary.strip()}\n>\n> *Curated by AI agent ({now_iso})*"
+
+        if "## Executive Overview" in text:
+            parts = text.split("## Executive Overview", 1)
+            rest = parts[1]
+            if "## Repository" in rest:
+                after_repo = "## Repository" + rest.split("## Repository", 1)[1]
+                updated_text = f"{parts[0]}{new_header}\n\n{after_repo}"
+            else:
+                updated_text = f"{parts[0]}{new_header}\n\n{rest}"
+        else:
+            if "## Repository" in text:
+                updated_text = text.replace("## Repository", f"{new_header}\n\n## Repository", 1)
+            else:
+                updated_text = f"{new_header}\n\n{text}"
+
+    def commit_knowledge(self, message: Optional[str] = None) -> Dict[str, Any]:
+        """Commit changes in the local knowledge repository using Git on-demand."""
+        import shutil
+        import subprocess
+
+        if not self.knowledge_path.exists():
+            return {"success": False, "error": f"Knowledge directory not found at {self.knowledge_path}"}
+
+        git_cmd = shutil.which("git")
+        if not git_cmd:
+            return {"success": False, "error": "Git executable not found in system PATH"}
+
+        try:
+            # Check if knowledge directory is initialized as a git repo
+            if not (self.knowledge_path / ".git").exists():
+                subprocess.run(["git", "init"], cwd=self.knowledge_path, capture_output=True, text=True, check=True)
+
+            # Stage all changes
+            subprocess.run(["git", "add", "."], cwd=self.knowledge_path, capture_output=True, text=True, check=True)
+
+            # Check if there are changes to commit
+            status_res = subprocess.run(["git", "status", "--porcelain"], cwd=self.knowledge_path, capture_output=True, text=True)
+            if not status_res.stdout.strip():
+                return {"success": True, "committed": False, "message": "No uncommitted changes in knowledge repository."}
+
+            commit_msg = message.strip() if message and message.strip() else "docs(knowledge): update repository knowledge and conventions"
+            commit_res = subprocess.run(
+                ["git", "commit", "-m", commit_msg],
+                cwd=self.knowledge_path,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            # Get latest commit hash
+            hash_res = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=self.knowledge_path, capture_output=True, text=True)
+            commit_hash = hash_res.stdout.strip() if hash_res.returncode == 0 else ""
+
+            return {
+                "success": True,
+                "committed": True,
+                "commit_hash": commit_hash,
+                "message": f"Successfully committed knowledge changes ({commit_hash}): {commit_msg}",
+            }
+        except Exception as e:
+            return {"success": False, "error": f"Git commit failed: {e}"}
 
 
 def create_mcp_server(knowledge_path: Path | str) -> FastMCP:
@@ -284,8 +392,20 @@ def create_mcp_server(knowledge_path: Path | str) -> FastMCP:
 
     @mcp.tool()
     def update_knowledge(category: str, title: str, content: str) -> str:
-        """Save or update a project convention, workflow, architecture decision, or finding into the knowledge repository."""
+        """Save or update a project convention, workflow, architecture decision, finding, or file note."""
         res = service.update_knowledge(category=category, title=title, content=content)
+        return json.dumps(res, indent=2)
+
+    @mcp.tool()
+    def update_overview(summary: str) -> str:
+        """Save or update the high-level AI Executive Overview in architecture/overview.md."""
+        res = service.update_overview(summary=summary)
+        return json.dumps(res, indent=2)
+
+    @mcp.tool()
+    def commit_knowledge(message: Optional[str] = None) -> str:
+        """Commit staged and modified knowledge files to the knowledge repository Git history on user demand."""
+        res = service.commit_knowledge(message=message)
         return json.dumps(res, indent=2)
 
     return mcp

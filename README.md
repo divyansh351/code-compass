@@ -305,15 +305,9 @@ analysis:
   symbols: true            # Class, function, parameter & AST analysis
   git_history: true        # Git commit metadata & file modification analysis
   max_git_commits: 100     # Max commits to extract
-
-# LLM Provider Configuration
-# By default, 'none' requires ZERO network calls and operates 100% offline.
-llm:
-  provider: none           # Options: none, ollama, openai, anthropic, gemini
-  model: null              # Model name (e.g., 'llama3' for ollama)
-  api_base: "http://localhost:11434"
-  temperature: 0.0
 ```
+
+> **Note on AI Overviews**: Code Compass does not require any external LLM API keys or configurations. When you build the repository, Code Compass deterministically maps the architecture. Your **active AI coding agent** (Claude, Cursor, Antigravity, etc.) can directly supply and enrich the executive AI overview using the `update_overview` MCP tool!
 
 ---
 
@@ -473,7 +467,7 @@ Set the executable command to `compass` with arguments `["serve", "--config", "c
 
 ## 🛠 MCP Tools Reference & Examples
 
-When connected via MCP, the AI agent has access to 7 specialized tools:
+When connected via MCP, the AI agent has access to 8 specialized tools:
 
 | Tool | Parameters | Description |
 | :--- | :--- | :--- |
@@ -483,7 +477,8 @@ When connected via MCP, the AI agent has access to 7 specialized tools:
 | `get_dependencies` | `name: str` | Returns upstream dependencies and downstream dependents for a component. |
 | `get_file_context` | `path: str` | Returns all symbols, containment relationships, and metadata for a source file. |
 | `get_change_surface` | `component: str` | Calculates the blast radius / impacted nodes in the knowledge graph. |
-| `update_knowledge` | `category: str`, `title: str`, `content: str` | Allows the AI agent to save new rules, conventions, workflows, ADRs, or findings directly into the knowledge repository. |
+| `update_knowledge` | `category: str`, `title: str`, `content: str` | Allows the AI agent to save new rules, conventions, workflows, ADRs, findings, or file notes directly into the knowledge repository. |
+| `update_overview` | `summary: str` | Allows the active AI agent to generate or update the executive AI overview section in `architecture/overview.md`. |
 
 ### Example Agent Interactions
 

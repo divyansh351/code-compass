@@ -1,30 +1,30 @@
-"""Unit tests for LLM abstraction and privacy guarantees."""
+"""Unit tests verifying zero external LLM dependencies and agent overview updates."""
 
+from pathlib import Path
 import pytest
-from unittest.mock import patch
 
 from compass.config.settings import CompassConfig
-from compass.llm.providers import NoneProvider, OllamaProvider, get_llm_provider
+from compass.mcp.server import KnowledgeService
 
 
-def test_none_provider_performs_no_network_requests():
-    """Verify NoneProvider default produces no network access."""
-    provider = NoneProvider()
-    res = provider.generate("Test prompt", "Test context")
-    assert res == ""
-
-
-def test_provider_factory_defaults_to_none():
+def test_zero_llm_credentials_required():
+    """Verify Code Compass config has zero LLM credentials or API configurations."""
     config = CompassConfig()
-    provider = get_llm_provider(config)
-    assert isinstance(provider, NoneProvider)
+    assert not hasattr(config, "llm")
+    assert config.project.name == "my-project"
 
 
-def test_ollama_provider_direct_endpoint_format():
-    config = CompassConfig()
-    config.llm.provider = "ollama"
-    config.llm.model = "codellama"
-    provider = get_llm_provider(config)
-    assert isinstance(provider, OllamaProvider)
-    assert provider.model == "codellama"
-    assert provider.api_base == "http://localhost:11434"
+def test_agent_can_update_overview_directly(tmp_path: Path):
+    """Verify that an active agent can supply and update the Executive AI overview directly via MCP service."""
+    knowledge_dir = tmp_path / "knowledge"
+    arch_dir = knowledge_dir / "architecture"
+    arch_dir.mkdir(parents=True)
+    (arch_dir / "overview.md").write_text("# Architecture Overview\n\n## Repository\n`test-app`\n", encoding="utf-8")
+
+    service = KnowledgeService(knowledge_dir)
+    res = service.update_overview("This is an AI-curated summary supplied by the active agent.")
+    assert res["success"] is True
+
+    overview_text = service.get_project_overview()
+    assert "This is an AI-curated summary supplied by the active agent." in overview_text
+    assert "## Executive Overview" in overview_text

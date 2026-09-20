@@ -1,13 +1,10 @@
-# Code Compass Configuration Example
-# Local-First Agent Knowledge Framework
-
 project:
-  name: example-app
-  description: "An example Python backend application"
+  name: code-compass
+  description: "Local-First Agent Knowledge Framework and MCP Server"
   version: 0.1.0
 
 source:
-  path: ./src
+  path: .
   ignore_patterns:
     - ".git"
     - "node_modules"
@@ -19,9 +16,10 @@ source:
     - "coverage"
     - ".env"
     - ".pytest_cache"
+    - "knowledge"
 
 knowledge:
-  path: ./knowledge
+  path: ../code-compass-knowledge
 
 analysis:
   languages:

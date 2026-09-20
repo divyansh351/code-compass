@@ -50,17 +50,6 @@ class AnalysisConfig(BaseModel):
     max_git_commits: int = Field(default=100, description="Max git commits to analyze")
 
 
-class LLMConfig(BaseModel):
-    """LLM provider configuration. Defaults to completely offline/none."""
-    provider: Literal["none", "ollama", "openai", "anthropic", "gemini"] = Field(
-        default="none",
-        description="LLM Provider. Default 'none' requires zero network access."
-    )
-    model: Optional[str] = Field(default=None, description="Model name if provider is enabled")
-    api_base: Optional[str] = Field(default="http://localhost:11434", description="Base URL for local/remote LLM")
-    temperature: float = Field(default=0.0, description="Generation temperature")
-
-
 class CompassConfig(BaseSettings):
     """Top-level Code Compass configuration schema."""
     model_config = SettingsConfigDict(
@@ -73,7 +62,6 @@ class CompassConfig(BaseSettings):
     source: SourceConfig = Field(default_factory=SourceConfig)
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
-    llm: LLMConfig = Field(default_factory=LLMConfig)
 
     @classmethod
     def from_yaml(cls, path: Path | str) -> "CompassConfig":
