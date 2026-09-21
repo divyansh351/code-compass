@@ -213,7 +213,24 @@ def doctor(
         git_path or "git not found in PATH (git history will be skipped)",
     )
 
-    # 3. Config File
+    # 3. Tree-sitter multi-language AST
+    try:
+        from tree_sitter_language_pack import get_parser as _ts_get_parser  # noqa: F401
+        from compass.analyzers.treesitter import LANGUAGE_MAP
+        ts_langs = ", ".join(sorted(LANGUAGE_MAP.keys()))
+        table.add_row(
+            "Tree-sitter (Multi-lang AST)",
+            "[green]PASS[/green]",
+            f"Active — {len(LANGUAGE_MAP)} languages: {ts_langs}",
+        )
+    except ImportError:
+        table.add_row(
+            "Tree-sitter (Multi-lang AST)",
+            "[yellow]MISSING[/yellow]",
+            "Run: pip install code-compass[multilang]",
+        )
+
+    # 4. Config File
     cfg_exists = Path(config_file).exists()
     table.add_row(
         "Configuration File",

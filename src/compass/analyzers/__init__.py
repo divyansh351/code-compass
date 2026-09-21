@@ -13,6 +13,7 @@ from compass.analyzers.files import FileAnalyzer
 from compass.analyzers.imports import classify_import, is_python_stdlib
 from compass.analyzers.python import PythonASTVisitor, PythonAnalyzer
 from compass.analyzers.symbols import build_symbol_id, format_parameters
+from compass.analyzers.treesitter import TreeSitterAnalyzer, LANGUAGE_MAP as TREESITTER_LANGUAGE_MAP
 
 __all__ = [
     "AnalysisResult",
@@ -29,4 +30,6 @@ __all__ = [
     "PythonAnalyzer",
     "build_symbol_id",
     "format_parameters",
+    "TreeSitterAnalyzer",
+    "TREESITTER_LANGUAGE_MAP",
 ]

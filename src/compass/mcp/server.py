@@ -302,6 +302,14 @@ class KnowledgeService:
             else:
                 updated_text = f"{new_header}\n\n{text}"
 
+        overview_file.write_text(updated_text, encoding="utf-8")
+        logger.info(f"Updated executive overview in {overview_file}")
+        return {
+            "success": True,
+            "file": "architecture/overview.md",
+            "message": "Executive overview successfully updated.",
+        }
+
     def commit_knowledge(self, message: Optional[str] = None) -> Dict[str, Any]:
         """Commit changes in the local knowledge repository using Git on-demand."""
         import shutil
