@@ -107,6 +107,18 @@ IMPORT_NODE_TYPES: Dict[str, List[str]] = {
 }
 
 
+CALL_NODE_TYPES: Dict[str, List[str]] = {
+    "javascript": ["call_expression"],
+    "typescript": ["call_expression"],
+    "go": ["call_expression"],
+    "rust": ["call_expression"],
+    "java": ["method_invocation"],
+    "ruby": ["call"],
+    "c": ["call_expression"],
+    "cpp": ["call_expression"],
+}
+
+
 def _get_node_text(node: Any, source: bytes) -> str:
     """Extract the UTF-8 text for a tree-sitter node."""
     return source[node.start_byte:node.end_byte].decode("utf-8", errors="replace")
@@ -122,19 +134,28 @@ def _find_child_by_type(node: Any, *types: str) -> Optional[Any]:
 
 def _find_name(node: Any, source: bytes, lang: str) -> str:
     """Best-effort extraction of a symbol name from a node."""
-    # Try common name-bearing child types
-    for name_type in ("identifier", "type_identifier", "field_identifier", "property_identifier"):
-        child = _find_child_by_type(node, name_type)
-        if child:
-            return _get_node_text(child, source)
+    try:
+        if hasattr(node, "child_by_field_name"):
+            name_node = node.child_by_field_name("name")
+            if name_node:
+                text = _get_node_text(name_node, source).strip()
+                if text:
+                    return text
+    except Exception:
+        pass
 
-    # Go: type_spec has a name as first identifier child inside type_declaration
-    if lang == "go" and node.type == "type_declaration":
-        for child in node.children:
-            if child.type == "type_spec":
-                id_child = _find_child_by_type(child, "type_identifier")
-                if id_child:
-                    return _get_node_text(id_child, source)
+    # Go method / type declarations
+    if lang == "go":
+        if node.type == "method_declaration":
+            child = _find_child_by_type(node, "field_identifier")
+            if child:
+                return _get_node_text(child, source)
+        elif node.type == "type_declaration":
+            for child in node.children:
+                if child.type == "type_spec":
+                    id_child = _find_child_by_type(child, "type_identifier")
+                    if id_child:
+                        return _get_node_text(id_child, source)
 
     # Rust: impl_item — use the type being implemented
     if lang == "rust" and node.type == "impl_item":
@@ -142,12 +163,32 @@ def _find_name(node: Any, source: bytes, lang: str) -> str:
             if child.type in ("type_identifier", "scoped_type_identifier"):
                 return _get_node_text(child, source)
 
-    # Java: fallback to first type_identifier
-    for child in node.children:
-        if child.type in ("type_identifier",):
+    # Try common name-bearing child types
+    for name_type in ("field_identifier", "property_identifier", "identifier", "type_identifier"):
+        child = _find_child_by_type(node, name_type)
+        if child:
             return _get_node_text(child, source)
 
     return "<anonymous>"
+
+
+def _extract_bases(node: Any, source: bytes) -> List[str]:
+    """Extract superclass and interface names from class/struct definitions."""
+    bases: List[str] = []
+
+    def _collect(n: Any):
+        if n.type in ("identifier", "type_identifier"):
+            text = _get_node_text(n, source).strip()
+            if text and text not in ("extends", "implements", "class", "interface"):
+                bases.append(text)
+        for c in n.children:
+            _collect(c)
+
+    for child in node.children:
+        if child.type in ("class_heritage", "superclass", "super_interfaces", "extends_clause", "implements_clause"):
+            _collect(child)
+
+    return bases
 
 
 def _extract_parameters(node: Any, source: bytes) -> List[str]:
@@ -229,18 +270,43 @@ def _extract_imports_from_node(node: Any, source: bytes, lang: str) -> List[str]
     return [m for m in modules if m]
 
 
-def _walk(node: Any) -> Any:
-    """Depth-first traversal of a tree-sitter tree."""
-    yield node
+def _extract_callee_name(node: Any, source: bytes, lang: str) -> Optional[str]:
+    """Extract callee name (e.g. 'fetch', 'repo.get', 'Println') from a call node."""
+    try:
+        if hasattr(node, "child_by_field_name"):
+            fn_node = (
+                node.child_by_field_name("function")
+                or node.child_by_field_name("name")
+                or node.child_by_field_name("method")
+            )
+            if fn_node:
+                text = _get_node_text(fn_node, source).strip()
+                if text and "\n" not in text and len(text) < 100:
+                    return text
+    except Exception:
+        pass
+
     for child in node.children:
-        yield from _walk(child)
+        if child.type in (
+            "identifier",
+            "member_expression",
+            "selector_expression",
+            "scoped_identifier",
+            "field_expression",
+            "property_identifier",
+        ):
+            text = _get_node_text(child, source).strip()
+            if text and "\n" not in text and len(text) < 100:
+                return text
+
+    return None
 
 
 class TreeSitterAnalyzer(BaseAnalyzer):
     """
     Universal AST analyzer for non-Python source files using tree-sitter.
 
-    Extracts classes, functions/methods, and imports into an AnalysisResult
+    Extracts classes, functions/methods, calls, and imports into an AnalysisResult
     with the identical shape to PythonAnalyzer — no downstream changes needed.
     """
 
@@ -304,94 +370,98 @@ class TreeSitterAnalyzer(BaseAnalyzer):
 
         symbol_types = SYMBOL_NODE_TYPES.get(self.language, {})
         import_types = set(IMPORT_NODE_TYPES.get(self.language, []))
+        call_types = set(CALL_NODE_TYPES.get(self.language, []))
         lang = self.language
 
         seen_ids: Dict[str, int] = {}
 
-        for node in _walk(tree.root_node):
-            ntype = node.type
+        def _traverse(
+            current_node: Any,
+            current_scope_id: Optional[str],
+            current_parent_id: Optional[str],
+        ) -> None:
+            ntype = current_node.type
+            next_scope_id = current_scope_id
+            next_parent_id = current_parent_id
 
             # ── Symbols (classes / functions / methods) ──────────────────────
             if ntype in symbol_types:
-                # Skip arrow_function nodes that are anonymous callbacks/params —
-                # only capture them when the parent is a variable_declarator (named export).
+                # Skip arrow_function nodes that are anonymous callbacks/params
                 if ntype == "arrow_function":
-                    parent = node.parent
+                    parent = current_node.parent
                     if parent is None or parent.type not in (
                         "variable_declarator", "assignment_expression", "pair",
                     ):
-                        continue
+                        for child in current_node.children:
+                            _traverse(child, current_scope_id, current_parent_id)
+                        return
 
                 kind = symbol_types[ntype]
-                raw_name = _find_name(node, source_bytes, lang)
+                raw_name = _find_name(current_node, source_bytes, lang)
 
-                # Skip truly anonymous or single-char noise (e.g. callback params)
-                if not raw_name or raw_name == "<anonymous>" or (
+                # Skip truly anonymous or single-char noise
+                if raw_name and raw_name != "<anonymous>" and not (
                     len(raw_name) == 1 and lang in ("typescript", "javascript")
                 ):
-                    continue
+                    base_id = build_symbol_id(relative_path, raw_name, parent_id=current_parent_id)
+                    seen_ids[base_id] = seen_ids.get(base_id, 0) + 1
+                    sym_id = base_id if seen_ids[base_id] == 1 else f"{base_id}_{seen_ids[base_id]}"
 
-                # Make IDs unique when name clashes exist
-                base_id = build_symbol_id(relative_path, raw_name)
-                seen_ids[base_id] = seen_ids.get(base_id, 0) + 1
-                sym_id = base_id if seen_ids[base_id] == 1 else f"{base_id}_{seen_ids[base_id]}"
+                    loc = SourceLocation(
+                        file=relative_path,
+                        line_start=current_node.start_point[0] + 1,
+                        line_end=current_node.end_point[0] + 1,
+                    )
 
-                loc = SourceLocation(
-                    file=relative_path,
-                    line_start=node.start_point[0] + 1,
-                    line_end=node.end_point[0] + 1,
-                )
+                    params: List[str] = []
+                    if kind in ("function", "method"):
+                        params = _extract_parameters(current_node, source_bytes)
+                        sig = f"{raw_name}({', '.join(params)})"
+                    else:
+                        sig = raw_name
 
-                params: List[str] = []
-                if kind in ("function", "method"):
-                    params = _extract_parameters(node, source_bytes)
-                    sig = f"{raw_name}({', '.join(params)})"
-                else:
-                    sig = raw_name
+                    bases: List[str] = _extract_bases(current_node, source_bytes) if kind == "class" else []
 
-                # Inheritance: look for superclass / heritage clause (JS/TS/Java)
-                bases: List[str] = []
-                for child in node.children:
-                    if child.type in ("class_heritage", "superclass", "super_interfaces",
-                                       "extends_clause", "implements_clause"):
-                        for sub in child.children:
-                            if sub.type in ("identifier", "type_identifier"):
-                                bases.append(_get_node_text(sub, source_bytes))
+                    sym = SymbolInfo(
+                        id=sym_id,
+                        name=raw_name,
+                        kind=kind,
+                        source=loc,
+                        signature=sig,
+                        parameters=params,
+                        parent_id=current_parent_id,
+                        docstring=None,
+                        decorators=[],
+                        metadata={"bases": bases, "node_type": ntype},
+                    )
+                    result.symbols.append(sym)
 
-                sym = SymbolInfo(
-                    id=sym_id,
-                    name=raw_name,
-                    kind=kind,
-                    source=loc,
-                    signature=sig,
-                    parameters=params,
-                    docstring=None,
-                    decorators=[],
-                    metadata={"bases": bases, "node_type": ntype},
-                )
-                result.symbols.append(sym)
-
-                # Record inheritance relationships
-                if kind == "class" and bases:
-                    for base in bases:
-                        result.inheritances.append(
-                            InheritanceInfo(
-                                subclass_id=sym_id,
-                                superclass_name=base,
-                                source=loc,
+                    # Record inheritance relationships
+                    if kind == "class" and bases:
+                        for base in bases:
+                            result.inheritances.append(
+                                InheritanceInfo(
+                                    subclass_id=sym_id,
+                                    superclass_name=base,
+                                    source=loc,
+                                )
                             )
-                        )
+
+                    if kind in ("function", "method"):
+                        next_scope_id = sym_id
+                    elif kind == "class":
+                        next_parent_id = sym_id
+                        next_scope_id = sym_id
 
             # ── Imports ──────────────────────────────────────────────────────
             if ntype in import_types:
-                mods = _extract_imports_from_node(node, source_bytes, lang)
+                mods = _extract_imports_from_node(current_node, source_bytes, lang)
                 for mod in mods:
                     loc = SourceLocation(
                         file=relative_path,
-                        line_start=node.start_point[0] + 1,
-                        line_end=node.end_point[0] + 1,
+                        line_start=current_node.start_point[0] + 1,
+                        line_end=current_node.end_point[0] + 1,
                     )
-                    # Treat the first path segment as top-level module name
                     top = mod.split("/")[0].split("::")[0].split(".")[0].strip()
                     is_relative = mod.startswith(".") or mod.startswith("..")
                     result.imports.append(
@@ -404,12 +474,34 @@ class TreeSitterAnalyzer(BaseAnalyzer):
                         )
                     )
 
+            # ── Function/Method Calls ────────────────────────────────────────
+            if ntype in call_types and next_scope_id:
+                callee = _extract_callee_name(current_node, source_bytes, lang)
+                if callee and callee not in ("require", "import"):
+                    loc = SourceLocation(
+                        file=relative_path,
+                        line_start=current_node.start_point[0] + 1,
+                        line_end=current_node.end_point[0] + 1,
+                    )
+                    result.calls.append(
+                        CallInfo(
+                            caller_id=next_scope_id,
+                            callee_name=callee,
+                            source=loc,
+                        )
+                    )
+
+            for child in current_node.children:
+                _traverse(child, next_scope_id, next_parent_id)
+
+        _traverse(tree.root_node, current_scope_id=None, current_parent_id=None)
+
         result.metadata["line_count"] = source_bytes.count(b"\n") + 1
         result.metadata["language"] = self.language
         result.metadata["analyzer"] = "tree-sitter"
 
         logger.debug(
             f"TreeSitterAnalyzer [{self.language}] {relative_path}: "
-            f"{len(result.symbols)} symbols, {len(result.imports)} imports"
+            f"{len(result.symbols)} symbols, {len(result.imports)} imports, {len(result.calls)} calls"
         )
         return result

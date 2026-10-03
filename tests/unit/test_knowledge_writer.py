@@ -54,6 +54,9 @@ def test_knowledge_writer_creates_structured_repo(tmp_path: Path):
     assert (res_path / "components" / "components.json").exists()
     assert (res_path / "graph" / "graph.json").exists()
     assert (res_path / "metadata" / "build.json").exists()
+    assert (res_path / "conventions" / "README.md").exists()
+    assert (res_path / "decisions" / "README.md").exists()
+    assert (res_path / "workflows" / "README.md").exists()
 
     # Verify manifest YAML
     manifest = yaml.safe_load((res_path / "manifest.yaml").read_text(encoding="utf-8"))

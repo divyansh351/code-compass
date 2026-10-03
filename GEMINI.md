@@ -10,4 +10,6 @@ This repository is configured with **Code Compass**, a local-first agent knowled
    - Call `get_change_surface` before refactoring core components to understand the blast radius.
 
 2. **Continuous Learning & Knowledge Updates**:
-   - When a new convention, pattern, workflow, or architecture decision is established or corrected by the user, call the `update_knowledge` MCP tool to persist it in `knowledge/conventions/`, `knowledge/workflows/`, or `knowledge/decisions/`.
+   - When a new convention, pattern, workflow, or architecture decision is established or corrected by the user, call the `update_knowledge` MCP tool to persist it in `knowledge/conventions/`, `knowledge/workflows/`, `knowledge/decisions/`, or `knowledge/files/`.
+   - Call `update_overview` to enrich or update the executive architecture summary in `architecture/overview.md`.
+   - Call `commit_knowledge` on demand to commit updated knowledge repository artifacts to Git history.

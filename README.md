@@ -21,6 +21,7 @@
    - [`compass analyze`](#3-compass-analyze)
    - [`compass build`](#4-compass-build)
    - [`compass serve`](#5-compass-serve)
+   - [`compass commit`](#6-compass-commit)
 6. [Configuration Reference (`compass.yaml`)](#-configuration-reference-compassyaml)
 7. [Knowledge Repository Specification](#-knowledge-repository-specification)
 8. [Knowledge Models & Provenance](#-knowledge-models--provenance)
@@ -261,6 +262,13 @@ Launches the local Model Context Protocol (MCP) server over `stdio`. If the know
 compass serve [--config compass.yaml]
 ```
 
+### 6. `compass commit`
+Stages and commits changes in the local knowledge repository using Git on demand.
+
+```bash
+compass commit [--message "docs(knowledge): update architectural notes"] [--config compass.yaml]
+```
+
 ---
 
 ## ⚙️ Configuration Reference (`compass.yaml`)
@@ -328,6 +336,9 @@ knowledge/
 │   └── README.md
 ├── decisions/
 │   └── README.md
+├── files/
+│   └── src/
+│       └── app.py.md
 ├── graph/
 │   └── graph.json
 └── metadata/
@@ -342,10 +353,12 @@ knowledge/
    - Discovered internal modules
    - External package dependencies
    - Inter-module relationship map (`module_a → module_b`)
+   - Curated executive overview supplied by the AI agent
 3. **`components/components.json`**: An array of discovered classes, functions, and modules, complete with docstrings, signatures, and line-level source provenance.
-4. **`graph/graph.json`**: The complete NetworkX knowledge graph serialized into JSON (`nodes` and `edges`).
-5. **`conventions/`**, **`workflows/`**, **`decisions/`**: Human-maintainable folders for coding rules, runbooks, and Architecture Decision Records (ADRs).
-6. **`metadata/build.json`**: Build timestamps, scan metrics, and Git commit summaries.
+4. **`files/`**: Mirrored per-file Markdown documentation containing AST symbol breakdowns and space for curated file gotchas/notes.
+5. **`graph/graph.json`**: The complete NetworkX knowledge graph serialized into JSON (`nodes` and `edges`).
+6. **`conventions/`**, **`workflows/`**, **`decisions/`**: Human and agent-maintainable folders for coding rules, runbooks, and Architecture Decision Records (ADRs).
+7. **`metadata/build.json`**: Build timestamps, scan metrics, and Git commit summaries.
 
 ---
 
@@ -467,7 +480,7 @@ Set the executable command to `compass` with arguments `["serve", "--config", "c
 
 ## 🛠 MCP Tools Reference & Examples
 
-When connected via MCP, the AI agent has access to 8 specialized tools:
+When connected via MCP, the AI agent has access to 9 specialized tools:
 
 | Tool | Parameters | Description |
 | :--- | :--- | :--- |
@@ -479,6 +492,7 @@ When connected via MCP, the AI agent has access to 8 specialized tools:
 | `get_change_surface` | `component: str` | Calculates the blast radius / impacted nodes in the knowledge graph. |
 | `update_knowledge` | `category: str`, `title: str`, `content: str` | Allows the AI agent to save new rules, conventions, workflows, ADRs, findings, or file notes directly into the knowledge repository. |
 | `update_overview` | `summary: str` | Allows the active AI agent to generate or update the executive AI overview section in `architecture/overview.md`. |
+| `commit_knowledge` | `message: Optional[str]` | Commits modified knowledge files to the knowledge repository Git history on user demand. |
 
 ### Example Agent Interactions
 
@@ -494,6 +508,10 @@ When connected via MCP, the AI agent has access to 8 specialized tools:
 > **User Prompt**: "You shouldn't query the SQL session inside route handlers; always use the Service layer. Record this in Code Compass so we don't repeat this."  
 > **Agent Action**: Calls `update_knowledge(category="conventions", title="router-database-boundary", content="Never query DB sessions directly inside route handlers. Route handlers must only call Service classes.")`.
 
+#### 4. Persisting File-Level Insights & Gotchas
+> **User Prompt**: "Make note of the thread-safety caveat in payment processor."  
+> **Agent Action**: Calls `update_knowledge(category="files", title="src/payment.ts", content="Caution: concurrent calls to processPayment must acquire the mutex lock.")`.
+
 ---
 
 ## 🔧 Extending Code Compass
@@ -506,26 +524,17 @@ from pathlib import Path
 from typing import Optional
 from compass.analyzers.base import BaseAnalyzer, AnalysisResult
 
-class RustAnalyzer(BaseAnalyzer):
+class KotlinAnalyzer(BaseAnalyzer):
     def can_analyze(self, file_path: Path | str, language: Optional[str] = None) -> bool:
-        return Path(file_path).suffix == ".rs"
+        return Path(file_path).suffix == ".kt"
 
     def analyze_file(self, file_path: Path, relative_path: str) -> AnalysisResult:
         # Parse AST and return AnalysisResult
         ...
 ```
 
-### Adding a Custom LLM Provider
-Implement the `LLMProvider` interface in `compass/llm/base.py`:
-
-```python
-from compass.llm.base import LLMProvider
-
-class CustomLocalLLM(LLMProvider):
-    def generate(self, prompt: str, context: str = "") -> str:
-        # Direct local generation
-        return "response"
-```
+### Agent-Driven Knowledge Curation
+Code Compass is 100% deterministic and local-first. It does not require or make calls to external LLM APIs. Instead, your active chat agent (e.g. Claude, Cursor, Antigravity, Cline) performs architectural analysis directly, persisting learnings and Architecture Decision Records (ADRs) through the `update_knowledge` and `update_overview` MCP tools.
 
 ---
 
@@ -544,9 +553,10 @@ pytest -v
 ### Test Coverage Highlights
 - **Repository Scanner Tests**: Validates file discovery, language classification, and ignore rules.
 - **Python Analyzer Tests**: Validates AST symbol extraction, classes, functions, decorators, calls, and imports.
+- **Tree-sitter Multi-Language Tests**: Validates AST symbol, import, inheritance, and call graph extraction across TypeScript, JavaScript, Go, Rust, Java, and C/C++.
 - **Knowledge Graph Tests**: Validates NetworkX node/edge operations, queries, serialization, and blast radius calculation.
-- **Knowledge Writer Tests**: Validates deterministic markdown generation and JSON schemas.
-- **Privacy & LLM Tests**: Verifies that the default `NoneProvider` makes zero network requests.
+- **Knowledge Writer Tests**: Validates deterministic markdown generation, template seeding, and JSON schemas.
+- **Agent Curation & Privacy Tests**: Verifies zero external LLM API dependencies and tests active AI agent curation tools.
 - **MCP Server & Tool Integration**: Tests end-to-end knowledge querying via MCP tools.
 
 ---
@@ -558,13 +568,13 @@ pytest -v
 - **No Remote Telemetry**: Zero analytics, zero logging to external servers.
 - **Zero Cloud Infrastructure**: No proprietary cloud backend or hosted database.
 - **Deterministic Offline Analysis**: All AST and graph analysis runs entirely on your local CPU.
-- **Opt-in Network Access**: Network requests only occur if you explicitly configure an external LLM provider with your own API credentials.
+- **100% Local & Private**: No external LLM keys or cloud API calls. Your active coding assistant interacts directly with the local MCP server over stdio.
 
 ---
 
 ## 🗺 Roadmap
 
-- [ ] Tree-sitter integration for TypeScript, JavaScript, Go, and Rust.
+- [x] Tree-sitter multi-language integration (TypeScript, JavaScript, Go, Rust, Java, Ruby, C/C++).
 - [ ] Local vector embedding and semantic search over docstrings and code context.
 - [ ] Automated Architecture Decision Record (ADR) generation.
 - [ ] Architecture rule validation & linting (e.g., preventing illegal layer imports).

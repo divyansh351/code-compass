@@ -1,3 +1,6 @@
 # Architecture Decision Records (ADRs)
 
-Store architecture decisions here in lightweight Markdown ADR format.
+This directory stores Architecture Decision Records (ADRs) explaining key design choices, trade-offs, and historical context.
+
+Agents can record new ADRs dynamically using the `update_knowledge` MCP tool.
+

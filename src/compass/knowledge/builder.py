@@ -462,3 +462,16 @@ class KnowledgeBuilder:
                     )
                 )
 
+        # Function/Method Calls
+        for call in res.calls:
+            caller_node_id = f"function:{call.caller_id}"
+            target_call_id = f"function:{call.callee_name}"
+            graph.add_edge(
+                KnowledgeEdge(
+                    source_id=caller_node_id,
+                    target_id=target_call_id,
+                    type=RelationshipType.CALLS,
+                    metadata={"callee_name": call.callee_name},
+                )
+            )
+

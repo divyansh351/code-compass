@@ -12,6 +12,28 @@ from compass.knowledge.graph import KnowledgeGraph
 from compass.knowledge.models import KnowledgeNodeType, RelationshipType
 
 
+STARTER_TEMPLATES: Dict[str, str] = {
+    "conventions/README.md": (
+        "# Project Conventions\n\n"
+        "This directory stores coding conventions, architectural rules, naming standards, "
+        "and style constraints extracted or documented for AI coding agents.\n\n"
+        "Agents can persist new conventions dynamically using the `update_knowledge` MCP tool.\n"
+    ),
+    "decisions/README.md": (
+        "# Architecture Decision Records (ADRs)\n\n"
+        "This directory stores Architecture Decision Records (ADRs) explaining key design choices, "
+        "trade-offs, and historical context.\n\n"
+        "Agents can record new ADRs dynamically using the `update_knowledge` MCP tool.\n"
+    ),
+    "workflows/README.md": (
+        "# Development Workflows\n\n"
+        "This directory contains documented development workflows, runbooks, build steps, "
+        "and testing procedures.\n\n"
+        "Agents can document new workflows dynamically using the `update_knowledge` MCP tool.\n"
+    ),
+}
+
+
 class KnowledgeWriter:
     """Writes the knowledge graph and architecture artifacts to a local directory structure."""
 
@@ -36,25 +58,36 @@ class KnowledgeWriter:
         ]:
             (self.output_dir / sub).mkdir(parents=True, exist_ok=True)
 
-        # 2. Write manifest.yaml
+        # 2. Seed starter guides in curated folders
+        self._seed_starter_templates()
+
+        # 3. Write manifest.yaml
         self._write_manifest(graph, repo_data)
 
-        # 3. Write architecture/overview.md
+        # 4. Write architecture/overview.md
         self._write_architecture_overview(graph, repo_data)
 
-        # 4. Write components/components.json
+        # 5. Write components/components.json
         self._write_components(graph)
 
-        # 5. Write mirrored per-file knowledge in files/
+        # 6. Write mirrored per-file knowledge in files/
         self._write_files_knowledge(graph, repo_data)
 
-        # 6. Write graph/graph.json
+        # 7. Write graph/graph.json
         self._write_graph(graph)
 
-        # 7. Write metadata/build.json
+        # 8. Write metadata/build.json
         self._write_metadata(graph, repo_data)
 
         return self.output_dir
+
+    def _seed_starter_templates(self) -> None:
+        """Seed initial starter guide README.md files into curated folders if not already present."""
+        for rel_path, content in STARTER_TEMPLATES.items():
+            target_file = self.output_dir / rel_path
+            if not target_file.exists():
+                target_file.parent.mkdir(parents=True, exist_ok=True)
+                target_file.write_text(content, encoding="utf-8")
 
     def _write_manifest(self, graph: KnowledgeGraph, repo_data: RepositoryData) -> None:
         manifest_data = {

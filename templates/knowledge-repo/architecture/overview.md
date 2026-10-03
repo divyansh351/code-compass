@@ -1,5 +1,8 @@
 # Architecture Overview
 
+## Executive Overview
+> Example project high-level architecture overview and agent-curated summary.
+
 ## Repository
 `example-project`
 
